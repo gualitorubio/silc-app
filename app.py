@@ -1,8 +1,9 @@
 import streamlit as st
 from pinecone import Pinecone
 import requests
+import json
 
-# 1. IDENTIDAD PROFESIONAL
+# 1. IDENTIDAD DEL SISTEMA
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 
 with st.sidebar:
@@ -14,14 +15,13 @@ with st.sidebar:
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.info("Desarrollado por Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
-# 2. CONFIGURACIÓN DE RECURSOS
+# 2. RECURSOS
 try:
-    # Usamos Pinecone para todo el flujo de datos inicial
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
-    GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
+    API_KEY = st.secrets["GEMINI_API_KEY"]
 except Exception as e:
-    st.error(f"Fallo de configuración inicial: {e}")
+    st.error(f"Fallo de configuración: {e}")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -29,14 +29,14 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-# 3. LÓGICA DE PROCESAMIENTO CON BYPASS DE RUTA
+# 3. PROCESAMIENTO CON BYPASS DE RUTA (VERSIÓN PRO)
 if prompt := st.chat_input("Introduzca su consulta jurídica aquí..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # Generación de vector usando el motor de Pinecone (Evita el 404 de Google)
+            # Vectorización vía Pinecone (para evitar el 404 de Google Embeddings)
             res_embed = pc.inference.embed(
                 model="multilingual-e5-large",
                 inputs=[prompt],
@@ -44,22 +44,32 @@ if prompt := st.chat_input("Introduzca su consulta jurídica aquí..."):
             )
             vector = res_embed[0].values
 
-            # Búsqueda semántica en los 87,508 registros
+            # Búsqueda en los 87,508 registros de leyes mexicanas
             search_results = index.query(vector=vector, top_k=5, include_metadata=True, namespace="silc-juridico")
             contexto = "\n".join([r['metadata']['text'] for r in search_results['matches']])
 
-            # Bypass de API: Usamos la ruta más genérica posible para Gemini
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={GEMINI_KEY}"
-            payload = {"contents": [{"parts": [{"text": f"Eres el SILC. Analiza este contexto legal mexicano: {contexto}\n\nPregunta: {prompt}"}]}]}
+            # PETICIÓN MANUAL AL MODELO PRO (Ruta v1 estable)
+            # Cambiamos a 'gemini-1.5-pro' para saltar el bloqueo de la versión flash
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-pro:generateContent?key={API_KEY}"
             
-            response = requests.post(url, json=payload)
+            payload = {
+                "contents": [{
+                    "parts": [{
+                        "text": f"Eres el SILC de Rubio Intelligence Systems. Analiza profesionalmente:\nCONTEXTO:\n{contexto}\n\nPREGUNTA:\n{prompt}"
+                    }]
+                }],
+                "generationConfig": {"temperature": 0.2}
+            }
+            
+            response = requests.post(url, json=payload, timeout=30)
             
             if response.status_code == 200:
                 answer = response.json()['candidates'][0]['content']['parts'][0]['text']
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             else:
-                st.error(f"El servidor de inteligencia no responde (Código {response.status_code}). Intente de nuevo en unos minutos.")
+                # Si falla, mostramos el error técnico para diagnóstico
+                st.error(f"Error de comunicación (Status {response.status_code}): {response.text}")
                 
         except Exception as e:
-            st.error(f"Error técnico en Rubio Intelligence Systems: {e}")
+            st.error(f"Error crítico en el motor de análisis: {e}")
