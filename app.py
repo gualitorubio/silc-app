@@ -2,62 +2,61 @@ import streamlit as st
 from pinecone import Pinecone
 import google.generativeai as genai
 
-# CONFIGURACIÓN E IDENTIDAD
-st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️", layout="wide")
+# IDENTIDAD PROFESIONAL
+st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 
-# Barra lateral (Garantizada)
 with st.sidebar:
     st.header("Guía de Consulta")
-    st.markdown("1. Ingrese su duda jurídica.\n2. Búsqueda en **Galaxia de Datos** (1024 dim).")
+    st.markdown("Analizando **Galaxia de Datos**.")
     st.divider()
-    st.caption("© 2026 Rubio Intelligence Systems | Doctorando Carlos Rubio")
+    st.caption("© 2026 Rubio Intelligence Systems")
 
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.info("Desarrollado por Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
-# INICIALIZACIÓN
+# CONFIGURACIÓN DIRECTA
 try:
+    # Usamos la conexión de Pinecone para los vectores
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
     
+    # Configuración de Gemini con versión de API explícita
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    # Cambiamos a Pro para ver si el 404 persiste, o mantenemos Flash con ruta segura
     model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"Error de configuración: {e}")
+    st.error(f"Error de inicio: {e}")
 
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "SILC en línea. ¿Qué análisis legal realizaremos hoy?"}]
+    st.session_state.messages = []
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-# PROCESAMIENTO
-if prompt := st.chat_input("Consulta legal..."):
+if prompt := st.chat_input("Escriba su consulta jurídica..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # SOLUCIÓN MAESTRA: Usar la inferencia de Pinecone para evitar el 404 de Google
-            embeddings = pc.inference.embed(
+            # USAMOS EL EMBEDDING DE PINECONE (Más estable que el de Google en este momento)
+            # Esto evita el error 404 models/embedding-001 not found
+            res_embed = pc.inference.embed(
                 model="multilingual-e5-large",
                 inputs=[prompt],
                 parameters={"input_type": "query"}
             )
-            query_vector = embeddings[0].values
+            vector = res_embed[0].values
 
-            results = index.query(
-                vector=query_vector,
-                top_k=5,
-                include_metadata=True,
-                namespace="silc-juridico"
-            )
+            # Búsqueda
+            search_results = index.query(vector=vector, top_k=3, include_metadata=True, namespace="silc-juridico")
+            context = "\n".join([r['metadata']['text'] for r in search_results['matches']])
 
-            contexto = "\n".join([res['metadata']['text'] for res in results['matches']])
-            full_prompt = f"Eres el SILC de Rubio Intelligence Systems. Contexto: {contexto}\nPregunta: {prompt}"
-            
+            # Respuesta
+            full_prompt = f"Como experto de Rubio Intelligence Systems, usa este contexto legal: {context}\nPregunta: {prompt}"
             response = model.generate_content(full_prompt)
+            
             st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
         except Exception as e:
-            st.error(f"Error técnico: {e}")
+            st.error(f"Error de procesamiento: {e}")
