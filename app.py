@@ -7,7 +7,7 @@ import os
 # CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 
-# ESTILO Y TÍTULO ACADÉMICO CORREGIDO
+# INTERFAZ PROFESIONAL - GRADO ACTUALIZADO
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.info("Desarrollado por Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
@@ -17,15 +17,15 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
 # CONFIGURACIÓN DE MODELOS
 genai.configure(api_key=GEMINI_API_KEY)
-# Usamos 'gemini-1.5-flash-latest' para asegurar compatibilidad y evitar el error 404
 model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-# INICIALIZACIÓN DE PINECONE Y EMBEDDINGS
+# INICIALIZACIÓN DE RECURSOS (CONEXIÓN A GALAXIA-DE-DATOS)
 @st.cache_resource
 def init_resources():
     pc = Pinecone(api_key=PINECONE_API_KEY)
-    # IMPORTANTE: Verifica que el nombre de tu índice en Pinecone coincida aquí
-    index = pc.Index("leyes-mexico") 
+    # CORRECCIÓN: Nombre exacto del índice según tu captura de Pinecone
+    index = pc.Index("galaxia-de-datos") 
+    # Usamos el modelo que coincide con tus dimensiones de vector
     embed_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
     return index, embed_model
 
@@ -42,37 +42,40 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-if prompt := st.chat_input("Consulta la legislación mexicana (ej. Ley de Expropiación 1936)..."):
+if prompt := st.chat_input("Consulta la legislación mexicana..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # 1. Generar embedding de la consulta
+            # 1. Generar embedding
             query_vector = embed_model.encode(prompt).tolist()
             
-            # 2. Buscar en Pinecone
-            results = index.query(vector=query_vector, top_k=5, include_metadata=True)
+            # 2. Buscar en el Namespace 'silc-juridico' que aparece en tu captura
+            results = index.query(
+                vector=query_vector, 
+                top_k=5, 
+                include_metadata=True,
+                namespace="silc-juridico"
+            )
+            
             contexto_legal = "\n".join([res['metadata']['text'] for res in results['matches']])
 
-            # 3. Construir el prompt institucional
+            # 3. Prompt con Identidad Institucional
             full_prompt = f"""
-            Actúa como un experto en Derecho Mexicano de Rubio Intelligence Systems.
-            Utiliza el siguiente contexto legal para responder la duda del usuario.
-            Si el contexto no contiene la respuesta, utiliza tu conocimiento jurídico base.
+            Eres el SILC, una IA experta en derecho mexicano de Rubio Intelligence Systems.
+            Responde de forma técnica y profesional usando este contexto:
             
-            Contexto recuperado:
             {contexto_legal}
             
-            Pregunta del usuario:
-            {prompt}
+            Pregunta: {prompt}
             """
 
-            # 4. Generar respuesta con Gemini
+            # 4. Generar respuesta
             response = model.generate_content(full_prompt)
             st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             
         except Exception as e:
-            st.error(f"Hubo un problema al procesar la consulta: {e}")
+            st.error(f"Error al consultar Rubio Intelligence Systems: {e}")
