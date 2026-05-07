@@ -56,7 +56,7 @@ try:
             # C. Construir Contexto
             context = "\n".join([res['metadata']['text'] for res in search_results['matches']])
 
-            # D. Prompt Institucional para el Mtro. Carlos Rubio
+            # D. Prompt Institucional para el Doctorando Carlos Rubio
             full_prompt = f"""
             Eres el motor de inteligencia de SILC (Sistema de Inteligencia Legal y Contexto).
             Tu objetivo es asistir al Dr. Carlos Rubio y a la comunidad jurídica con respuestas precisas, 
