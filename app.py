@@ -2,84 +2,77 @@ import streamlit as st
 import google.generativeai as genai
 from pinecone import Pinecone
 from sentence_transformers import SentenceTransformer
+import os
 
-# 1. Configuración de la página
+# CONFIGURACIÓN DE PÁGINA
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 
-st.title("⚖️ SILC")
-st.markdown("### Sistema de Inteligencia Legal y Contexto")
-st.info("Desarrollado por Rubio Intelligence Systems | Dr. Carlos Rubio")
+# ESTILO Y TÍTULO ACADÉMICO CORREGIDO
+st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
+st.info("Desarrollado por Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
-# 2. Cargar Secretos (Configurados en Streamlit Cloud)
+# CONFIGURACIÓN DE LLAVES (SECRETS)
 PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 
-# 3. Inicializar Modelos y Clientes
+# CONFIGURACIÓN DE MODELOS
+genai.configure(api_key=GEMINI_API_KEY)
+# Usamos 'gemini-1.5-flash-latest' para asegurar compatibilidad y evitar el error 404
+model = genai.GenerativeModel('gemini-1.5-flash-latest')
+
+# INICIALIZACIÓN DE PINECONE Y EMBEDDINGS
 @st.cache_resource
-def load_models():
-    # Configurar Gemini
-    genai.configure(api_key=GEMINI_API_KEY)
-    model_gemini = genai.GenerativeModel('gemini-1.5-flash')
-    
-    # Configurar Pinecone
+def init_resources():
     pc = Pinecone(api_key=PINECONE_API_KEY)
-    index = pc.Index("leyes-mexico") # Asegúrate que este sea el nombre de tu índice
-    
-    # Configurar Embeddings
-    embed_model = SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')
-    
-    return model_gemini, index, embed_model
+    # IMPORTANTE: Verifica que el nombre de tu índice en Pinecone coincida aquí
+    index = pc.Index("leyes-mexico") 
+    embed_model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+    return index, embed_model
 
 try:
-    gemini, index, embed_model = load_models()
+    index, embed_model = init_resources()
+except Exception as e:
+    st.error(f"Error de conexión con la base de datos legal: {e}")
 
-    # 4. Interfaz de Chat
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+# INTERFAZ DE CHAT
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
 
-    if prompt := st.chat_input("Escriba su consulta legal aquí..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+if prompt := st.chat_input("Consulta la legislación mexicana (ej. Ley de Expropiación 1936)..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-        with st.chat_message("assistant"):
-            # A. Generar Embedding de la pregunta
+    with st.chat_message("assistant"):
+        try:
+            # 1. Generar embedding de la consulta
             query_vector = embed_model.encode(prompt).tolist()
-
-            # B. Buscar en Pinecone
-            search_results = index.query(vector=query_vector, top_k=7, include_metadata=True)
             
-            # C. Construir Contexto
-            context = "\n".join([res['metadata']['text'] for res in search_results['matches']])
+            # 2. Buscar en Pinecone
+            results = index.query(vector=query_vector, top_k=5, include_metadata=True)
+            contexto_legal = "\n".join([res['metadata']['text'] for res in results['matches']])
 
-            # D. Prompt Institucional para el Doctorando Carlos Rubio
+            # 3. Construir el prompt institucional
             full_prompt = f"""
-            Eres el motor de inteligencia de SILC (Sistema de Inteligencia Legal y Contexto).
-            Tu objetivo es asistir al Dr. Carlos Rubio y a la comunidad jurídica con respuestas precisas, 
-            basadas estrictamente en la legislación mexicana y su contexto histórico.
-
-            CONTEXTO LEGAL RECUPERADO:
-            {context}
-
-            PREGUNTA DEL USUARIO:
+            Actúa como un experto en Derecho Mexicano de Rubio Intelligence Systems.
+            Utiliza el siguiente contexto legal para responder la duda del usuario.
+            Si el contexto no contiene la respuesta, utiliza tu conocimiento jurídico base.
+            
+            Contexto recuperado:
+            {contexto_legal}
+            
+            Pregunta del usuario:
             {prompt}
-
-            INSTRUCCIONES:
-            1. Usa el contexto para responder. 
-            2. Si la pregunta es histórica, contrasta la evolución de la ley.
-            3. Si no encuentras la respuesta en el contexto, indícalo pero ofrece una interpretación basada en principios generales del derecho.
-            4. Mantén un tono profesional, jurista y ejecutivo.
             """
 
-            # E. Generar Respuesta con Gemini
-            response = gemini.generate_content(full_prompt)
+            # 4. Generar respuesta con Gemini
+            response = model.generate_content(full_prompt)
             st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
-
-except Exception as e:
-    st.error(f"Hubo un error en la conexión del sistema: {e}")
-    st.info("Verifique que las API Keys en 'Secrets' y el nombre del índice en Pinecone sean correctos.")
+            
+        except Exception as e:
+            st.error(f"Hubo un problema al procesar la consulta: {e}")
