@@ -5,52 +5,33 @@ import json
 
 # 1. IDENTIDAD PROFESIONAL
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
-
-with st.sidebar:
-    st.header("Guía de Consulta")
-    st.markdown("Analizando **Galaxia de Datos** (1024 dim).")
-    st.divider()
-    st.caption("© 2026 Rubio Intelligence Systems")
-
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
-st.info("Desarrollado por Rubio Intelligence Systems | Dr. Carlos Rubio")
+st.markdown("---")
 
-# 2. CONFIGURACIÓN DE RECURSOS
+# 2. CONEXIÓN DIRECTA A RECURSOS
 try:
+    # Usamos Pinecone para los vectores (esto funciona correctamente)
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
-    GEMINI_KEY = st.secrets["GEMINI_API_KEY"]
+    API_KEY = st.secrets["GEMINI_API_KEY"]
 except Exception as e:
-    st.error(f"Fallo de configuración: {e}")
+    st.error(f"Fallo de inicio: {e}")
 
-# Función para bypass del error 404 usando la ruta estable v1
-def call_gemini_direct(prompt):
-    # Usamos la versión 'v1' y el modelo 'gemini-1.5-flash' explícitamente
-    url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
-    headers = {'Content-Type': 'application/json'}
-    payload = {"contents": [{"parts": [{"text": prompt}]}]}
-    
-    response = requests.post(url, headers=headers, data=json.dumps(payload))
-    
-    if response.status_code == 200:
-        return response.json()['candidates'][0]['content']['parts'][0]['text']
-    else:
-        return f"Error de conexión directa (Status {response.status_code}): {response.text}"
-
+# 3. INTERFAZ DE CHAT
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-# 3. PROCESAMIENTO
-if prompt := st.chat_input("Consulta jurídica..."):
+# 4. PROCESAMIENTO SIN LIBRERÍAS DE GOOGLE (BYPASS TOTAL)
+if prompt := st.chat_input("Introduzca su consulta jurídica aquí..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # USAMOS EL EMBEDDING DE PINECONE (Evita el 404 de Google Embeddings)
+            # Vectorización vía Pinecone Inference (Evita errores de embedding de Google)
             res_embed = pc.inference.embed(
                 model="multilingual-e5-large",
                 inputs=[prompt],
@@ -58,15 +39,29 @@ if prompt := st.chat_input("Consulta jurídica..."):
             )
             vector = res_embed[0].values
 
-            # Búsqueda en la Galaxia de Datos (87,508 registros)
-            search_results = index.query(vector=vector, top_k=5, include_metadata=True, namespace="silc-juridico")
-            context = "\n".join([r['metadata']['text'] for r in search_results['matches']])
+            # Búsqueda en Galaxia de Datos
+            search = index.query(vector=vector, top_k=3, include_metadata=True, namespace="silc-juridico")
+            contexto = "\n".join([r['metadata']['text'] for r in search['matches']])
 
-            # Respuesta vía Bypass Directo
-            full_prompt = f"Eres el SILC de Rubio Intelligence Systems. Analiza este contexto: {context}\nPregunta: {prompt}"
-            answer = call_gemini_direct(full_prompt)
+            # PETICIÓN POST PURA (Forzamos v1 y el modelo flash)
+            # Esta ruta es la más estable del mundo para Gemini
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY}"
+            headers = {'Content-Type': 'application/json'}
+            data = {
+                "contents": [{"parts": [{"text": f"Eres el SILC. Contexto: {contexto}\nPregunta: {prompt}"}]}]
+            }
             
-            st.markdown(answer)
-            st.session_state.messages.append({"role": "assistant", "content": answer})
+            response = requests.post(url, headers=headers, json=data, timeout=30)
+            
+            if response.status_code == 200:
+                answer = response.json()['candidates'][0]['content']['parts'][0]['text']
+                st.markdown(answer)
+                st.session_state.messages.append({"role": "assistant", "content": answer})
+            else:
+                st.error(f"El servidor respondió con código {response.status_code}. Detalle: {response.text}")
+                
         except Exception as e:
-            st.error(f"Error en Rubio Intelligence Systems: {e}")
+            st.error(f"Error técnico en Rubio Intelligence Systems: {e}")
+
+with st.sidebar:
+    st.caption("© 2026 Rubio Intelligence Systems | Dr. Carlos Rubio")
