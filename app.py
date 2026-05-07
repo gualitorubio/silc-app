@@ -2,75 +2,76 @@ import streamlit as st
 import google.generativeai as genai
 from pinecone import Pinecone
 
-# 1. CONFIGURACIÓN E IDENTIDAD
+# 1. IDENTIDAD E INTERFAZ (CARGA INMEDIATA)
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️", layout="wide")
+
+# Barra lateral recuperada
+with st.sidebar:
+    st.header("Guía de Consulta")
+    st.markdown("""
+    **Instrucciones:**
+    1. Ingrese su consulta jurídica abajo.
+    2. El sistema buscará en la **Galaxia de Datos** (1024 dim).
+    3. Recibirá un análisis técnico basado en legislación mexicana.
+    """)
+    st.divider()
+    st.caption("© 2026 Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.info("Desarrollado por Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
-# 2. BARRA LATERAL
-with st.sidebar:
-    st.header("Guía de Consulta")
-    st.markdown("Consultando la **Galaxia de Datos** (1024 dimensiones).")
-    st.divider()
-    st.caption("© 2026 Rubio Intelligence Systems")
-
-# 3. CONFIGURACIÓN DE LLAVES (SECRETS)
-PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
-GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash-latest')
-
-# 4. RECURSOS
-@st.cache_resource
-def init_resources():
+# 2. CONFIGURACIÓN DE RECURSOS CON CONTROL DE ERRORES
+try:
+    PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
+    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
+    
+    # Configuración forzada a versión estable v1
+    genai.configure(api_key=GEMINI_API_KEY, transport='rest') 
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
     pc = Pinecone(api_key=PINECONE_API_KEY)
-    return pc.Index("galaxia-de-datos")
+    index = pc.Index("galaxia-de-datos")
+except Exception as e:
+    st.error(f"Fallo en la inicialización: {e}")
 
-index = init_resources()
-
-# Inicialización de historial
+# 3. GESTIÓN DEL CHAT
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Bienvenido al SILC. La conexión con la Galaxia de Datos es estable. ¿Qué análisis legal desea realizar?"}]
+    st.session_state.messages = [{"role": "assistant", "content": "Bienvenido al SILC. Sistema conectado a la Galaxia de Datos. ¿Qué área del derecho analizaremos?"}]
 
-# Mostrar mensajes
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 5. LÓGICA DE PROCESAMIENTO
+# 4. LÓGICA DE PROCESAMIENTO (REPARACIÓN DEL 404)
 if prompt := st.chat_input("Introduzca su consulta legal aquí..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Analizando registros legales en Rubio Intelligence Systems..."):
+        with st.spinner("Procesando en Rubio Intelligence Systems..."):
             try:
-                # LLAMADA PARA 1024 DIMENSIONES (MODELO ESTABLE)
-                embedding = genai.embed_content(
+                # LLAMADA MANUAL AL EMBEDDING PARA EVITAR ERROR DE VERSIÓN
+                embedding_data = genai.embed_content(
                     model="models/embedding-001",
                     content=prompt,
                     task_type="retrieval_query"
                 )
-                query_vector = embedding['embedding']
+                query_vector = embedding_data['embedding']
                 
-                # Búsqueda en Pinecone (Namespace correcto)
+                # Búsqueda en Pinecone
                 results = index.query(
                     vector=query_vector, 
-                    top_k=7, 
+                    top_k=5, 
                     include_metadata=True,
                     namespace="silc-juridico"
                 )
                 
                 contexto = "\n".join([res['metadata']['text'] for res in results['matches']])
 
-                # Prompt Maestro
                 full_prompt = f"""
-                Eres el SILC, una IA experta en Derecho Mexicano de Rubio Intelligence Systems.
-                Analiza la pregunta del usuario basándote en este contexto legal:
-                
+                Eres el SILC de Rubio Intelligence Systems. 
+                Usa este contexto legal para responder:
                 {contexto}
                 
                 Pregunta: {prompt}
@@ -81,4 +82,4 @@ if prompt := st.chat_input("Introduzca su consulta legal aquí..."):
                 st.session_state.messages.append({"role": "assistant", "content": response.text})
                 
             except Exception as e:
-                st.error(f"Error en el procesamiento: {e}")
+                st.error(f"Error de conexión con el motor de análisis: {e}")
