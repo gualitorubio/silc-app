@@ -1,85 +1,63 @@
 import streamlit as st
-import google.generativeai as genai
 from pinecone import Pinecone
+import google.generativeai as genai
 
-# 1. IDENTIDAD E INTERFAZ (CARGA INMEDIATA)
+# CONFIGURACIÓN E IDENTIDAD
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️", layout="wide")
 
-# Barra lateral recuperada
+# Barra lateral (Garantizada)
 with st.sidebar:
     st.header("Guía de Consulta")
-    st.markdown("""
-    **Instrucciones:**
-    1. Ingrese su consulta jurídica abajo.
-    2. El sistema buscará en la **Galaxia de Datos** (1024 dim).
-    3. Recibirá un análisis técnico basado en legislación mexicana.
-    """)
+    st.markdown("1. Ingrese su duda jurídica.\n2. Búsqueda en **Galaxia de Datos** (1024 dim).")
     st.divider()
     st.caption("© 2026 Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.info("Desarrollado por Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
-# 2. CONFIGURACIÓN DE RECURSOS CON CONTROL DE ERRORES
+# INICIALIZACIÓN
 try:
-    PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
-    GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
-    
-    # Configuración forzada a versión estable v1
-    genai.configure(api_key=GEMINI_API_KEY, transport='rest') 
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    
-    pc = Pinecone(api_key=PINECONE_API_KEY)
+    pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
+    
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
-    st.error(f"Fallo en la inicialización: {e}")
+    st.error(f"Error de configuración: {e}")
 
-# 3. GESTIÓN DEL CHAT
 if "messages" not in st.session_state:
-    st.session_state.messages = [{"role": "assistant", "content": "Bienvenido al SILC. Sistema conectado a la Galaxia de Datos. ¿Qué área del derecho analizaremos?"}]
+    st.session_state.messages = [{"role": "assistant", "content": "SILC en línea. ¿Qué análisis legal realizaremos hoy?"}]
 
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-# 4. LÓGICA DE PROCESAMIENTO (REPARACIÓN DEL 404)
-if prompt := st.chat_input("Introduzca su consulta legal aquí..."):
+# PROCESAMIENTO
+if prompt := st.chat_input("Consulta legal..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Procesando en Rubio Intelligence Systems..."):
-            try:
-                # LLAMADA MANUAL AL EMBEDDING PARA EVITAR ERROR DE VERSIÓN
-                embedding_data = genai.embed_content(
-                    model="models/embedding-001",
-                    content=prompt,
-                    task_type="retrieval_query"
-                )
-                query_vector = embedding_data['embedding']
-                
-                # Búsqueda en Pinecone
-                results = index.query(
-                    vector=query_vector, 
-                    top_k=5, 
-                    include_metadata=True,
-                    namespace="silc-juridico"
-                )
-                
-                contexto = "\n".join([res['metadata']['text'] for res in results['matches']])
+        try:
+            # SOLUCIÓN MAESTRA: Usar la inferencia de Pinecone para evitar el 404 de Google
+            embeddings = pc.inference.embed(
+                model="multilingual-e5-large",
+                inputs=[prompt],
+                parameters={"input_type": "query"}
+            )
+            query_vector = embeddings[0].values
 
-                full_prompt = f"""
-                Eres el SILC de Rubio Intelligence Systems. 
-                Usa este contexto legal para responder:
-                {contexto}
-                
-                Pregunta: {prompt}
-                """
+            results = index.query(
+                vector=query_vector,
+                top_k=5,
+                include_metadata=True,
+                namespace="silc-juridico"
+            )
 
-                response = model.generate_content(full_prompt)
-                st.markdown(response.text)
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-                
-            except Exception as e:
-                st.error(f"Error de conexión con el motor de análisis: {e}")
+            contexto = "\n".join([res['metadata']['text'] for res in results['matches']])
+            full_prompt = f"Eres el SILC de Rubio Intelligence Systems. Contexto: {contexto}\nPregunta: {prompt}"
+            
+            response = model.generate_content(full_prompt)
+            st.markdown(response.text)
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+        except Exception as e:
+            st.error(f"Error técnico: {e}")
