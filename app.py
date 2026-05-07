@@ -1,27 +1,42 @@
 import streamlit as st
+import google.generativeai as genai
 from pinecone import Pinecone
-import requests
 
-# 1. IDENTIDAD DEL SISTEMA
+# IDENTIDAD
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.info("Desarrollado por Rubio Intelligence Systems | Dr. Carlos Rubio")
 
-# 2. CONFIGURACIÓN (Secrets)
+# CONFIGURACIÓN DE LLAVES
 try:
+    # 1. Configurar Gemini con la librería oficial
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    
+    # 2. Configurar Pinecone
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
-    API_KEY = st.secrets["GEMINI_API_KEY"]
 except Exception as e:
-    st.error(f"Error de llaves: {e}")
+    st.error(f"Fallo en la carga de credenciales: {e}")
 
-# 3. CHAT E INTELIGENCIA
-if prompt := st.chat_input("Introduzca su consulta jurídica..."):
+# MOTOR DE INTELIGENCIA CON FALLBACK
+def generar_respuesta_segura(prompt_final):
+    # Intentamos primero con Flash (más rápido), si falla, vamos a Pro
+    for model_name in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]:
+        try:
+            model = genai.GenerativeModel(model_name)
+            response = model.generate_content(prompt_final)
+            return response.text
+        except Exception:
+            continue
+    return "Error Crítico: Ningún modelo de Google respondió. Verifique que la API esté habilitada en su consola de Google Cloud."
+
+# INTERFAZ
+if prompt := st.chat_input("Introduzca su consulta jurídica aquí..."):
     with st.chat_message("user"): st.markdown(prompt)
-
+    
     with st.chat_message("assistant"):
         try:
-            # Búsqueda en Galaxia de Datos
+            # Recuperación de la Galaxia de Datos (1024 dim)
             res_embed = pc.inference.embed(
                 model="multilingual-e5-large",
                 inputs=[prompt],
@@ -30,27 +45,11 @@ if prompt := st.chat_input("Introduzca su consulta jurídica..."):
             
             search = index.query(vector=res_embed[0].values, top_k=4, include_metadata=True, namespace="silc-juridico")
             contexto = "\n".join([r['metadata']['text'] for r in search['matches']])
-
-            # LA LLAMADA DEFINITIVA: Usamos 'gemini-pro' (La ruta más estable del mundo)
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={API_KEY}"
             
-            payload = {
-                "contents": [{
-                    "parts": [{
-                        "text": f"Actúa como el SILC de Rubio Intelligence Systems. Analiza este contexto legal:\n{contexto}\n\nPregunta: {prompt}"
-                    }]
-                }]
-            }
+            # Generación
+            full_prompt = f"Eres el SILC. Analiza este contexto legal:\n{contexto}\n\nPregunta: {prompt}"
+            respuesta = generar_respuesta_segura(full_prompt)
+            st.markdown(respuesta)
             
-            response = requests.post(url, json=payload, timeout=30)
-            
-            if response.status_code == 200:
-                answer = response.json()['candidates'][0]['content']['parts'][0]['text']
-                st.markdown(answer)
-            else:
-                # Si esto falla, el problema es la propagación de la llave
-                st.error(f"El servidor de inteligencia aún no reconoce la nueva llave (Código {response.status_code}).")
-                st.write("Respuesta de Google:", response.text)
-                
         except Exception as e:
-            st.error(f"Fallo en Rubio Intelligence Systems: {e}")
+            st.error(f"Error técnico en el motor SILC: {e}")
