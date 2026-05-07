@@ -2,52 +2,76 @@ import streamlit as st
 import google.generativeai as genai
 from pinecone import Pinecone
 
-# 1. IDENTIDAD JURÍDICA
+# --- CONFIGURACIÓN DE IDENTIDAD ---
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.info("Desarrollado por Rubio Intelligence Systems | Dr. Carlos Rubio")
 
-# 2. CONFIGURACIÓN DE RECURSOS
+# --- CARGA DE RECURSOS ---
 try:
-    # Configuración de IA con la llave que generó a las 4:37 p.m.
+    # Configuramos la IA con su llave de Google AI Studio
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # Configuración de la Galaxia de Datos
+    # Configuramos la Galaxia de Datos (Pinecone)
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
 except Exception as e:
-    st.error(f"Fallo en credenciales: {e}")
+    st.error(f"Error en la configuración de llaves: {e}")
 
-# 3. INTERFAZ DE CONSULTA
+# --- INTERFAZ DE CHAT ---
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+# --- LÓGICA DE PROCESAMIENTO JURÍDICO ---
 if prompt := st.chat_input("Introduzca su consulta jurídica aquí..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # Búsqueda semántica en los 1024 dim
+            # 1. Recuperación de Contexto (RAG)
+            # Generamos el vector de la consulta para buscar en las 317 leyes
             res_embed = pc.inference.embed(
                 model="multilingual-e5-large",
                 inputs=[prompt],
                 parameters={"input_type": "query"}
             )
             
-            search = index.query(
+            # Buscamos en el índice de 1024 dimensiones
+            search_results = index.query(
                 vector=res_embed[0].values, 
                 top_k=4, 
                 include_metadata=True, 
                 namespace="silc-juridico"
             )
-            contexto = "\n".join([r['metadata']['text'] for r in search['matches']])
+            contexto_legal = "\n".join([r['metadata']['text'] for r in search_results['matches']])
 
-            # GENERACIÓN CON FALLBACK AUTOMÁTICO
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(
-                f"Eres el SILC. Analiza este contexto legal:\n{contexto}\n\nPregunta: {prompt}"
-            )
+            # 2. Generación de Respuesta con Fallback Automático
+            # Si el modelo Flash falla por región, el sistema saltará al modelo Pro
+            modelos_disponibles = ["gemini-1.5-flash", "gemini-pro"]
+            respuesta_final = ""
             
-            st.markdown(response.text)
-            
+            for nombre_modelo in modelos_disponibles:
+                if not respuesta_final:
+                    try:
+                        model = genai.GenerativeModel(nombre_modelo)
+                        chat_response = model.generate_content(
+                            f"Actúa como el SILC. Analiza este contexto legal:\n{contexto_legal}\n\nPregunta: {prompt}"
+                        )
+                        respuesta_final = chat_response.text
+                    except:
+                        continue
+
+            if respuesta_final:
+                st.markdown(respuesta_final)
+                st.session_state.messages.append({"role": "assistant", "content": respuesta_final})
+            else:
+                st.error("Lo sentimos, los servidores de Google aún están propagando su nueva clave. Intente de nuevo en un minuto.")
+
         except Exception as e:
-            st.error(f"Error técnico en Rubio Intelligence Systems: {e}")
-            st.warning("Verifique que 'google-generativeai' esté en su requirements.txt")
+            st.error(f"Error técnico en el motor SILC: {e}")
