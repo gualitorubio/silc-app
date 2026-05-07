@@ -1,24 +1,17 @@
 import streamlit as st
 import google.generativeai as genai
 from pinecone import Pinecone
-import os
 
-# 1. CONFIGURACIÓN DE PÁGINA
+# 1. CONFIGURACIÓN E IDENTIDAD
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️", layout="wide")
 
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
-st.subheader("Plataforma de Análisis Jurídico Avanzado")
 st.info("Desarrollado por Rubio Intelligence Systems | Doctorando Carlos Rubio")
 
 # 2. BARRA LATERAL
 with st.sidebar:
     st.header("Guía de Consulta")
-    st.markdown("""
-    **¿Cómo usar el SILC?**
-    1. Escriba su duda jurídica en el chat.
-    2. El sistema consultará la **Galaxia de Datos** (1024 dimensiones).
-    3. La IA entregará un análisis técnico especializado.
-    """)
+    st.markdown("Consultando la **Galaxia de Datos** (1024 dim).")
     st.divider()
     st.caption("© 2026 Rubio Intelligence Systems")
 
@@ -29,12 +22,56 @@ GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash-latest')
 
-# 4. INICIALIZACIÓN DE RECURSOS (MODELO 1024 DIMENSIONES)
+# 4. RECURSOS
 @st.cache_resource
 def init_resources():
     pc = Pinecone(api_key=PINECONE_API_KEY)
-    index = pc.Index("galaxia-de-datos") 
-    return index
+    return pc.Index("galaxia-de-datos")
+
+index = init_resources()
+
+if "messages" not in st.session_state:
+    st.session_state.messages = [{"role": "assistant", "content": "Bienvenido al SILC. El sistema está en línea. ¿Qué análisis legal desea realizar?"}]
+
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+
+# 5. PROCESAMIENTO
+if prompt := st.chat_input("Introduzca su consulta legal aquí..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        with st.spinner("Analizando en la Galaxia de Datos..."):
+            try:
+                # LLAMADA COMPATIBLE PARA 1024 DIMENSIONES
+                embedding = genai.embed_content(
+                    model="models/embedding-001",
+                    content=prompt,
+                    task_type="retrieval_query"
+                )
+                query_vector = embedding['embedding']
+                
+                # Búsqueda en Pinecone
+                results = index.query(
+                    vector=query_vector, 
+                    top_k=5, 
+                    include_metadata=True,
+                    namespace="silc-juridico"
+                )
+                
+                contexto = "\n".join([res['metadata']['text'] for res in results['matches']])
+
+                full_prompt = f"Eres el SILC de Rubio Intelligence Systems. Usa este contexto: {contexto}. Pregunta: {prompt}"
+
+                response = model.generate_content(full_prompt)
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                
+            except Exception as e:
+                st.error(f"Error: {e}")    return index
 
 index = init_resources()
 
