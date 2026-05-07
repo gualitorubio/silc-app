@@ -2,3 +2,4 @@ streamlit
 google-generativeai
 pinecone[grpc]
 sentence-transformers
+torch
