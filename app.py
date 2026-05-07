@@ -1,14 +1,13 @@
 import streamlit as st
 from pinecone import Pinecone
 import requests
-import json
 
-# 1. IDENTIDAD DEL SISTEMA
+# 1. IDENTIDAD
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.info("Desarrollado por Rubio Intelligence Systems | Dr. Carlos Rubio")
 
-# 2. RECURSOS BÁSICOS
+# 2. CONFIGURACIÓN
 try:
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
@@ -22,14 +21,14 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
-# 3. PROCESAMIENTO CON BYPASS DE MODELO
+# 3. LÓGICA DE PROCESAMIENTO
 if prompt := st.chat_input("Introduzca su consulta jurídica aquí..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"): st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # Vectorización vía Pinecone (Motor nativo e5-large)
+            # Vectorización vía Pinecone Inference (Para evitar el 404 de embeddings de Google)
             res_embed = pc.inference.embed(
                 model="multilingual-e5-large",
                 inputs=[prompt],
@@ -37,18 +36,18 @@ if prompt := st.chat_input("Introduzca su consulta jurídica aquí..."):
             )
             vector = res_embed[0].values
 
-            # Búsqueda en los 87,508 registros de la Galaxia de Datos
-            search_results = index.query(vector=vector, top_k=4, include_metadata=True, namespace="silc-juridico")
+            # Búsqueda en Galaxia de Datos
+            search_results = index.query(vector=vector, top_k=3, include_metadata=True, namespace="silc-juridico")
             contexto = "\n".join([r['metadata']['text'] for r in search_results['matches']])
 
-            # LLAMADA AL MODELO PRO (Bypass de error 404)
-            # Cambiamos la ruta a 'gemini-pro' sin versión de parche para máxima compatibilidad
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={API_KEY}"
+            # LA LLAMADA DE RESCATE: Usamos 'gemini-pro' (sin 1.5)
+            # Esta es la ruta más compatible y antigua de la API v1
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={API_KEY}"
             
             payload = {
                 "contents": [{
                     "parts": [{
-                        "text": f"Eres el SILC de Rubio Intelligence Systems. Analiza este contexto legal:\n{contexto}\n\nPregunta: {prompt}"
+                        "text": f"Eres el SILC de Rubio Intelligence Systems. Contexto legal:\n{contexto}\n\nPregunta: {prompt}"
                     }]
                 }]
             }
@@ -60,7 +59,8 @@ if prompt := st.chat_input("Introduzca su consulta jurídica aquí..."):
                 st.markdown(answer)
                 st.session_state.messages.append({"role": "assistant", "content": answer})
             else:
-                st.error(f"El servidor de inteligencia requiere un ajuste de ruta (Código {response.status_code}).")
+                # Si falla, mostramos el error exacto para diagnosticar la API Key
+                st.error(f"Respuesta del servidor: {response.status_code}. Verifique si su API Key tiene permisos para Gemini Pro.")
                 
         except Exception as e:
-            st.error(f"Error técnico en el motor SILC: {e}")
+            st.error(f"Error técnico: {e}")
