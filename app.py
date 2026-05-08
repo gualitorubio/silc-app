@@ -3,7 +3,7 @@ import google.generativeai as genai
 from pinecone import Pinecone
 
 # ==========================================
-# 1. CONFIGURACIÓN DE IDENTIDAD DEL SILC
+# 1. CONFIGURACIÓN DE IDENTIDAD Y PÁGINA
 # ==========================================
 st.set_page_config(
     page_title="SILC - Rubio Intelligence Systems", 
@@ -11,57 +11,76 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("⚖️ SILC: Sistema de Inteligencia Legal")
-st.subheader("Plataforma de Inteligencia Jurídica y Convencional")
-
-# Barra lateral con identidad profesional
-st.sidebar.markdown("### Rubio Intelligence Systems")
-st.sidebar.write("**Director:** Doctorando Carlos Rubio")
-st.sidebar.markdown("---")
+# Estilo para centrar el lema y logos si fuera necesario
+st.markdown("<style> .stImage {display: block; margin-left: auto; margin-right: auto;} </style>", unsafe_allow_html=True)
 
 # ==========================================
-# 2. CONEXIÓN DE MOTOR (GEMINI 3 & PINECONE)
+# 2. BARRA LATERAL (LOGOS E INSTRUCCIONES)
 # ==========================================
+with st.sidebar:
+    # Carga de Logos
+    try:
+        st.image("SILC Logo.PNG", use_container_width=True)
+        st.image("Rubio Intelligence Systems Logo.PNG", use_container_width=True)
+    except:
+        st.warning("Suba los archivos de imagen a GitHub para visualizar los logos.")
+    
+    st.divider()
+    
+    # Instrucciones de Uso
+    st.markdown("### 📖 Instrucciones de Uso")
+    st.info("""
+    1. **Consulta:** Ingrese su duda o caso legal en el chat principal.
+    2. **Análisis:** El sistema consultará la base de datos legislativa y convencional.
+    3. **Rigor:** Obtendrá una respuesta fundamentada con perspectiva histórica y actual.
+    """)
+    
+    st.divider()
+    st.markdown("### Director")
+    st.write("Doctorando Carlos Rubio")
+    st.caption("© 2026 Rubio Intelligence Systems")
 
-# Usamos la nueva API Key de AI Studio y el modelo Gemini 3
+# ==========================================
+# 3. CUERPO PRINCIPAL
+# ==========================================
+st.title("⚖️ SILC")
+# LEMA ACTUALIZADO
+st.markdown("#### *Certeza jurídica con profundidad histórica*")
+st.divider()
+
+# ==========================================
+# 4. CONFIGURACIÓN DE MOTOR (IA & VECTOR DB)
+# ==========================================
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Cambiamos a gemini-3-flash-preview para evitar el error 404 del modelo 1.5
+    # Usamos el modelo que ya confirmamos que funciona (Gemini 3)
     model = genai.GenerativeModel('gemini-3-flash-preview')
-except Exception as e:
-    st.error(f"Error en configuración de IA: {e}")
-
-# Conexión a la Galaxia de Datos
-try:
+    
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
 except Exception as e:
-    st.error(f"Error en base de datos Pinecone: {e}")
+    st.error(f"Error de configuración: {e}")
 
-# ==========================================
-# 3. GESTIÓN DEL CHAT
-# ==========================================
+# Gestión del historial de chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Mostrar historial
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
 # ==========================================
-# 4. PROCESAMIENTO JURÍDICO (RAG)
+# 5. PROCESAMIENTO DE CONSULTAS
 # ==========================================
-if prompt := st.chat_input("Escriba su consulta jurídica aquí..."):
-    # Guardar mensaje del usuario
+if prompt := st.chat_input("Realice su consulta jurídica..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # A. Recuperación de contexto legal
-            with st.spinner("Analizando legislación y precedentes..."):
+            with st.spinner("Consultando registros del SILC..."):
+                # Búsqueda en Pinecone
                 res_embed = pc.inference.embed(
                     model="multilingual-e5-large",
                     inputs=[prompt],
@@ -77,26 +96,18 @@ if prompt := st.chat_input("Escriba su consulta jurídica aquí..."):
                 
                 contexto_legal = "\n\n".join([m['metadata']['text'] for m in query_res['matches']])
 
-            # B. Generación de respuesta con Gemini 3
-            instruccion_maestra = (
-                f"Eres el SILC (Sistema de Inteligencia Legal y Contexto). "
-                f"Analiza la consulta con rigor jurídico basándote en este contexto:\n\n"
-                f"{contexto_legal}\n\n"
-                f"PREGUNTA:\n{prompt}"
-            )
+                # Generación de respuesta con el nuevo motor
+                instruccion = (
+                    f"Eres el SILC (Sistema de Inteligencia Legal y Contexto). "
+                    f"Tu lema es 'Certeza jurídica con profundidad histórica'. "
+                    f"Analiza con rigor lo siguiente basándote en este contexto:\n\n"
+                    f"{contexto_legal}\n\nPregunta: {prompt}"
+                )
 
-            # Esta llamada usará tu nueva cuota de AI Studio
-            response = model.generate_content(instruccion_maestra)
-            
-            st.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
+                response = model.generate_content(instruccion)
+                
+                st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
 
         except Exception as e:
-            # Diagnóstico en caso de error
             st.error(f"Aviso del Sistema: {str(e)}")
-            if "404" in str(e):
-                st.info("Sugerencia: Dale a 'Reboot App' en el menú de la derecha de Streamlit.")
-
-# Pie de página
-st.sidebar.markdown("---")
-st.sidebar.caption("© 2026 Rubio Intelligence Systems.")
