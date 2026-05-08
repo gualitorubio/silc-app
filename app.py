@@ -1,38 +1,21 @@
 import streamlit as st
 import google.generativeai as genai
-from google.generativeai.types import RequestOptions
 from pinecone import Pinecone
 
-# 1. Configuración de Identidad
+# 1. Configuración Básica
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 st.title("⚖️ SILC: Sistema de Inteligencia Legal")
-st.sidebar.markdown("### Rubio Intelligence Systems")
 st.sidebar.write("Director: Doctorando Carlos Rubio")
 
-# 2. Conexión de Pago (FUERZA VERSIÓN v1)
-try:
-    # Configuramos la llave
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    
-    # Esta es la parte CRÍTICA: forzamos explícitamente la versión 'v1' 
-    # para que Google no te mande a la 'v1beta' que da el error 404.
-    model = genai.GenerativeModel(
-        model_name='gemini-1.5-flash'
-    )
-    # Definimos opciones de envío para asegurar la ruta de pago
-    envio_pro = RequestOptions(api_version='v1')
-    
-except Exception as e:
-    st.error(f"Error de configuración de IA: {e}")
+# 2. Inicialización de APIs
+# Usamos la llave de pago para evitar límites
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-# 3. Conexión a Base de Datos (Pinecone)
-try:
-    pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
-    index = pc.Index("galaxia-de-datos")
-except Exception as e:
-    st.error(f"Error de base de datos: {e}")
+pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
+index = pc.Index("galaxia-de-datos")
 
-# 4. Interfaz de Chat
+# 3. Historial del Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -40,25 +23,40 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
+# 4. Procesamiento de Consultas
 if prompt := st.chat_input("Escriba su consulta jurídica..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
+        # A. Recuperación de Contexto (Pinecone)
+        res_embed = pc.inference.embed(
+            model="multilingual-e5-large",
+            inputs=[prompt],
+            parameters={"input_type": "query"}
+        )
+        
+        query_res = index.query(
+            vector=res_embed[0].values, 
+            top_k=3, 
+            include_metadata=True,
+            namespace="silc-juridico"
+        )
+        
+        contexto = ""
+        for match in query_res['matches']:
+            contexto += match['metadata']['text'] + "\n\n"
+        
+        # B. Generación de Respuesta (Gemini)
+        # El uso de f-strings aquí es lo más estable para la API v1
+        prompt_final = f"Eres el SILC. Usa este contexto:\n{contexto}\n\nPregunta: {prompt}"
+        
         try:
-            # Búsqueda Vectorial
-            res_embed = pc.inference.embed(
-                model="multilingual-e5-large",
-                inputs=[prompt],
-                parameters={"input_type": "query"}
-            )
-            
-            query_res = index.query(
-                vector=res_embed[0].values, 
-                top_k=3, 
-                include_metadata=True,
-                namespace="silc-juridico"
-            )
-            
-            contexto = "\n\n".join
+            # Esta llamada usa tu bono de pago automáticamente
+            response = model.generate_content(prompt_final)
+            texto_respuesta = response.text
+            st.markdown(texto_respuesta)
+            st.session_state.messages.append({"role": "assistant", "content": texto_respuesta})
+        except Exception as e:
+            st.error(f"Error en Gemini: {str(e)}")
