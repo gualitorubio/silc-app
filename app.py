@@ -11,50 +11,55 @@ st.set_page_config(
     layout="wide"
 )
 
+# Estilo profesional para Rubio Intelligence Systems
 st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
 st.markdown("---")
-st.sidebar.image("https://www.google.com/images/branding/googlelogo/2x/googlelogo_color_92x30dp.png", width=100) # Placeholder para logo RIS
-st.sidebar.title("Configuración")
-st.sidebar.info("v17.4.12.25 | Rubio Intelligence Systems\n\nDirector: Dr. Carlos Rubio")
+
+st.sidebar.title("Infraestructura RIS")
+st.sidebar.info("""
+**Versión:** 17.4.12.25  
+**Director:** Dr. Carlos Rubio  
+**Estado:** Piloto Universitario
+""")
 
 # ==========================================
-# 2. CONEXIÓN DE INFRAESTRUCTURA (SECRETS)
+# 2. CONEXIÓN DE INFRAESTRUCTURA
 # ==========================================
 try:
-    # Configuración de Google Gemini
+    # Configuración de Google Gemini (Versión estable)
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
-    # Configuración de Pinecone
+    # Se utiliza la versión más reciente para evitar Error 404
+    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    
+    # Configuración de Pinecone para la Galaxia de Datos
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
     
-    # Modelo optimizado para evitar Error 404
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    
 except Exception as e:
-    st.error(f"❌ Error en la carga de infraestructura: {e}")
+    st.error(f"❌ Error de conexión: {e}")
+    st.info("Verifique que las llaves en 'Secrets' no tengan espacios y que el índice de Pinecone esté activo.")
     st.stop()
 
 # ==========================================
-# 3. LÓGICA DE PROCESAMIENTO JURÍDICO
+# 3. INTERFAZ DE CONSULTA JURÍDICA
 # ==========================================
-if prompt := st.chat_input("Realice su consulta sobre legislación mexicana (ej. Reforma 2011)..."):
+if prompt := st.chat_input("Introduzca su consulta sobre la Reforma de 2011 o la Ley de 1936..."):
     
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
-        with st.spinner("Consultando Galaxia de Datos y analizando convencionalidad..."):
+        with st.spinner("Analizando convencionalidad en la Galaxia de Datos..."):
             try:
-                # A. Generar Embedding de la consulta
+                # A. Generar Embedding (Búsqueda semántica)
                 res_embed = pc.inference.embed(
                     model="multilingual-e5-large",
                     inputs=[prompt],
                     parameters={"input_type": "query"}
                 )
                 
-                # B. Búsqueda Vectorial en Pinecone
-                # Buscamos en el namespace 'silc-juridico' donde están las 317 leyes
+                # B. Recuperación de Contexto Legal
                 query_res = index.query(
                     vector=res_embed[0].values, 
                     top_k=5, 
@@ -62,40 +67,36 @@ if prompt := st.chat_input("Realice su consulta sobre legislación mexicana (ej.
                     namespace="silc-juridico"
                 )
                 
-                # C. Construcción del Contexto
-                contexto_legal = "\n\n".join([item['metadata']['text'] for item in query_res['matches']])
+                contexto_recuperado = "\n\n".join([item['metadata']['text'] for item in query_res['matches']])
                 
-                # D. Generación de Respuesta con IA
-                prompt_final = f"""
-                Eres el SILC (Sistema de Inteligencia Legal y Contexto) de Rubio Intelligence Systems.
-                Analiza la siguiente consulta basándote en el contexto legal proporcionado y los principios 
-                de la Reforma Constitucional de 2011 (Derechos Humanos y Pro Personae).
-
-                CONTEXTO LEGAL RECUPERADO:
-                {contexto_legal}
-
-                CONSULTA DEL USUARIO:
+                # C. Generación de Respuesta Especializada
+                instruccion_silc = f"""
+                Actúa como el SILC (Sistema de Inteligencia Legal y Contexto). 
+                Analiza la consulta del Doctorando Carlos Rubio basándote en:
+                1. El contexto legal recuperado de la base de datos.
+                2. El principio de convencionalidad y la Reforma Constitucional de 2011.
+                
+                CONTEXTO:
+                {contexto_recuperado}
+                
+                CONSULTA:
                 {prompt}
-
-                RESPUESTA JURÍDICA:
                 """
                 
-                response = model.generate_content(prompt_final)
+                respuesta = model.generate_content(instruccion_silc)
+                st.markdown(respuesta.text)
                 
-                # E. Despliegue de Resultados
-                st.markdown(response.text)
-                
-                with st.expander("Ver fuentes de la Galaxia de Datos"):
+                # D. Transparencia de Fuentes
+                with st.expander("Fuentes consultadas (317 Leyes Federales)"):
                     for match in query_res['matches']:
-                        st.write(f"**Fuente:** {match['metadata'].get('source', 'Ley Federal')}")
-                        st.caption(match['metadata']['text'][:300] + "...")
+                        st.write(f"📌 {match['metadata'].get('source', 'Documento Legal')}")
+                        st.caption(match['metadata']['text'][:250] + "...")
 
             except Exception as e:
-                st.error(f"Hubo un error en el procesamiento: {e}")
-                st.info("Sugerencia: Verifique que el índice 'galaxia-de-datos' esté activo en su consola de Pinecone.")
+                st.error(f"Error en el procesamiento: {e}")
 
 # ==========================================
-# 4. PIE DE PÁGINA PROFESIONAL
+# 4. PIE DE PÁGINA
 # ==========================================
 st.markdown("---")
-st.caption("Powered by Rubio Intelligence Systems © 2026 | Análisis de Convencionalidad y Celeridad Procesal")
+st.caption("Powered by Rubio Intelligence Systems © 2026 | Análisis de Proporcionalidad y Debido Proceso")
