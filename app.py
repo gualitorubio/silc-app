@@ -11,28 +11,28 @@ st.set_page_config(
     layout="centered"
 )
 
-# Estilo para centrar el lema y logos si fuera necesario
+# Estilo para mejorar la visualización de imágenes
 st.markdown("<style> .stImage {display: block; margin-left: auto; margin-right: auto;} </style>", unsafe_allow_html=True)
 
 # ==========================================
 # 2. BARRA LATERAL (LOGOS E INSTRUCCIONES)
 # ==========================================
 with st.sidebar:
-    # Carga de Logos
+    # Carga de Logos (Ajustado a extensiones .png según GitHub)
     try:
-        st.image("SILC Logo.PNG", use_container_width=True)
-        st.image("Rubio Intelligence Systems Logo.PNG", use_container_width=True)
+        st.image("SILC Logo.png", use_container_width=True)
+        st.image("Rubio Intelligence Systems Logo.png", use_container_width=True)
     except:
-        st.warning("Suba los archivos de imagen a GitHub para visualizar los logos.")
+        st.warning("Verifique que los archivos .png estén en la raíz de GitHub.")
     
     st.divider()
     
     # Instrucciones de Uso
     st.markdown("### 📖 Instrucciones de Uso")
     st.info("""
-    1. **Consulta:** Ingrese su duda o caso legal en el chat principal.
-    2. **Análisis:** El sistema consultará la base de datos legislativa y convencional.
-    3. **Rigor:** Obtendrá una respuesta fundamentada con perspectiva histórica y actual.
+    1. **Consulta:** Ingrese su duda o caso legal en el chat.
+    2. **Análisis:** El sistema consultará la base de datos legislativa.
+    3. **Rigor:** Obtendrá una respuesta con perspectiva histórica y actual.
     """)
     
     st.divider()
@@ -44,7 +44,7 @@ with st.sidebar:
 # 3. CUERPO PRINCIPAL
 # ==========================================
 st.title("⚖️ SILC")
-# LEMA ACTUALIZADO
+# LEMA OFICIAL
 st.markdown("#### *Certeza jurídica con profundidad histórica*")
 st.divider()
 
@@ -53,13 +53,13 @@ st.divider()
 # ==========================================
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    # Usamos el modelo que ya confirmamos que funciona (Gemini 3)
+    # Motor Gemini 3 (Evita el error 404)
     model = genai.GenerativeModel('gemini-3-flash-preview')
     
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
 except Exception as e:
-    st.error(f"Error de configuración: {e}")
+    st.error(f"Error de configuración técnica: {e}")
 
 # Gestión del historial de chat
 if "messages" not in st.session_state:
@@ -70,7 +70,7 @@ for message in st.session_state.messages:
         st.markdown(message["content"])
 
 # ==========================================
-# 5. PROCESAMIENTO DE CONSULTAS
+# 5. PROCESAMIENTO DE CONSULTAS (RAG)
 # ==========================================
 if prompt := st.chat_input("Realice su consulta jurídica..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -80,7 +80,7 @@ if prompt := st.chat_input("Realice su consulta jurídica..."):
     with st.chat_message("assistant"):
         try:
             with st.spinner("Consultando registros del SILC..."):
-                # Búsqueda en Pinecone
+                # Búsqueda Vectorial en Pinecone
                 res_embed = pc.inference.embed(
                     model="multilingual-e5-large",
                     inputs=[prompt],
@@ -96,12 +96,12 @@ if prompt := st.chat_input("Realice su consulta jurídica..."):
                 
                 contexto_legal = "\n\n".join([m['metadata']['text'] for m in query_res['matches']])
 
-                # Generación de respuesta con el nuevo motor
+                # Prompt Maestro con Identidad Institucional
                 instruccion = (
                     f"Eres el SILC (Sistema de Inteligencia Legal y Contexto). "
                     f"Tu lema es 'Certeza jurídica con profundidad histórica'. "
-                    f"Analiza con rigor lo siguiente basándote en este contexto:\n\n"
-                    f"{contexto_legal}\n\nPregunta: {prompt}"
+                    f"Analiza con rigor lo siguiente basándote en este contexto recuperado:\n\n"
+                    f"{contexto_legal}\n\nPregunta del usuario: {prompt}"
                 )
 
                 response = model.generate_content(instruccion)
