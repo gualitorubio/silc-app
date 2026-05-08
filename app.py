@@ -1,23 +1,19 @@
 import streamlit as st
-import google.generativeai as genai
+import requests
+import json
 from pinecone import Pinecone
 
-# 1. Configuración de Identidad
+# 1. Identidad
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
 st.title("⚖️ SILC: Sistema de Inteligencia Legal")
 st.sidebar.write("Director: Doctorando Carlos Rubio")
 
-# 2. INICIALIZACIÓN FORZADA (PRODUCCIÓN)
-# Configuramos la llave que ya verificamos que es de pago
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-
-# FORZAMOS el uso de la versión 'v1' para saltar el error 404 de la 'v1beta'
-model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash'
-)
+# 2. Configuración de APIs (Secrets)
+API_KEY = st.secrets["GEMINI_API_KEY"]
+PINECONE_KEY = st.secrets["PINECONE_API_KEY"]
 
 # Conexión a Base de Datos
-pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
+pc = Pinecone(api_key=PINECONE_KEY)
 index = pc.Index("galaxia-de-datos")
 
 # 3. Interfaz de Chat
@@ -35,7 +31,7 @@ if prompt := st.chat_input("Consulta jurídica..."):
 
     with st.chat_message("assistant"):
         try:
-            # Recuperación de Contexto
+            # A. Recuperación de Contexto (Pinecone)
             res_embed = pc.inference.embed(
                 model="multilingual-e5-large",
                 inputs=[prompt],
@@ -51,15 +47,29 @@ if prompt := st.chat_input("Consulta jurídica..."):
             
             contexto = "\n".join([m['metadata']['text'] for m in query_res['matches']])
             
-            # GENERACIÓN DE RESPUESTA
-            # Usamos una estructura simple que Google v1 acepta sin problemas
-            full_query = f"Contexto:\n{contexto}\n\nPregunta: {prompt}"
+            # B. LLAMADA DIRECTA POR HTTP (Saltándose el SDK de Google)
+            # Aquí obligamos a usar la versión 'v1' estable de pago
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={API_KEY}"
             
-            # LLAMADA DE PRODUCCIÓN
-            response = model.generate_content(full_query)
+            payload = {
+                "contents": [{
+                    "parts": [{"text": f"Eres el SILC. Contexto:\n{contexto}\n\nPregunta: {prompt}"}]
+                }]
+            }
             
-            st.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
+            headers = {'Content-Type': 'application/json'}
             
+            # Petición directa al servidor de Google v1
+            response = requests.post(url, headers=headers, data=json.dumps(payload))
+            res_json = response.json()
+
+            if response.status_code == 200:
+                texto_final = res_json['candidates'][0]['content']['parts'][0]['text']
+                st.markdown(texto_final)
+                st.session_state.messages.append({"role": "assistant", "content": texto_final})
+            else:
+                # Si falla, nos dirá el error real de Google sin máscaras
+                st.error(f"Error de Google: {res_json.get('error', {}).get('message', 'Error desconocido')}")
+
         except Exception as e:
-            st.error(f"Aviso Técnico: {str(e)}")
+            st.error(f"Aviso del Sistema: {str(e)}")
