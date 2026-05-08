@@ -1,23 +1,21 @@
 import streamlit as st
 import google.generativeai as genai
 from pinecone import Pinecone
-import os
 
-# 1. IDENTIDAD VISUAL
+# 1. Configuración de Identidad
 st.set_page_config(page_title="SILC - Rubio Intelligence Systems", page_icon="⚖️")
-st.title("⚖️ SILC: Sistema de Inteligencia Legal y Contexto")
-st.sidebar.markdown("### Rubio Intelligence Systems")
-st.sidebar.write("Director: Doctorando Carlos Rubio")
+st.title("⚖️ SILC: Sistema de Inteligencia Legal")
 
-# 2. CONFIGURACIÓN DE APIS (USANDO TUS SECRETS)
-# La API de pago requiere la librería actualizada para evitar el error 404
+# 2. Conexión de Pago (Forzando versión estable)
+# La librería detectará tu API Key de pago automáticamente
 genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 model = genai.GenerativeModel('gemini-1.5-flash')
 
+# 3. Conexión a Base de Datos (Pinecone)
 pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
 index = pc.Index("galaxia-de-datos")
 
-# 3. GESTIÓN DE MEMORIA
+# 4. Interfaz de Chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
@@ -25,15 +23,14 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
 
-# 4. MOTOR DE RESPUESTA JURÍDICA
-if prompt := st.chat_input("Escriba su consulta jurídica..."):
+if prompt := st.chat_input("Consulta jurídica..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.markdown(prompt)
 
     with st.chat_message("assistant"):
         try:
-            # Búsqueda en Pinecone
+            # Búsqueda Vectorial
             res_embed = pc.inference.embed(
                 model="multilingual-e5-large",
                 inputs=[prompt],
@@ -42,24 +39,21 @@ if prompt := st.chat_input("Escriba su consulta jurídica..."):
             
             query_res = index.query(
                 vector=res_embed[0].values, 
-                top_k=5, 
+                top_k=3, 
                 include_metadata=True,
                 namespace="silc-juridico"
             )
             
             contexto = "\n\n".join([item['metadata']['text'] for item in query_res['matches']])
             
-            # Generación de Respuesta con IA de Pago
-            system_prompt = (
-                f"Eres el SILC, una IA experta en derecho mexicano y convencionalidad. "
-                f"Analiza la siguiente pregunta basándote en este contexto legal:\n\n{contexto}"
-            )
+            # Generación de Respuesta (RAG)
+            # Pasamos el contexto directamente en el prompt para evitar errores de configuración
+            prompt_final = f"Contexto legal:\n{contexto}\n\nPregunta: {prompt}\n\nResponde con rigor jurídico."
             
-            # Llamada directa al modelo estable
-            response = model.generate_content([system_prompt, prompt])
+            response = model.generate_content(prompt_final)
             
             st.markdown(response.text)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             
         except Exception as e:
-            st.error(f"Aviso del Sistema: {str(e)}")
+            st.error(f"Error Técnico: {str(e)}")
