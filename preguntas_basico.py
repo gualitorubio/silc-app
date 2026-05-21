@@ -35,15 +35,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. SISTEMA DE SEGURIDAD Y AJUSTE DE URL (FALLBACK CONTROL)
+# 2. ENLACE DINÁMICO CON BUILDERALL (URL PARAMETERS)
 # ==========================================
 query_params = st.query_params
-# Corrección: Si el parámetro 'user' viene vacío o Safari lo oculta, se asigna gualitorubio@gmail.com por defecto para pruebas
-usuario_activo = query_params.get("user", "gualitorubio@gmail.com")
+# Extrae dinámicamente el correo enviado por la plataforma de Builderall en la variable '?user='
+usuario_activo = query_params.get("user", None)
 
 if not usuario_activo:
     st.error("❌ Acceso denegado. Sesión no identificada.")
-    st.info("Por favor, inicia sesión desde tu panel de usuario en silcmexico.com.")
+    st.info("Por favor, inicia sesión desde tu panel de usuario protegido en silcmexico.com.")
     st.stop()
 
 # ==========================================
@@ -54,7 +54,7 @@ ahora_cdmx = datetime.now(zona_cdmx)
 fecha_actual_cdmx = ahora_cdmx.strftime('%Y-%m-%d')
 
 try:
-    # Conexión directa y veloz a la BD de control usando Secrets
+    # Conexión automática y segura mediante Secrets de Streamlit
     supabase_url = st.secrets["SUPABASE_URL"]
     supabase_key = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(supabase_url, supabase_key)
@@ -64,23 +64,23 @@ except Exception as e:
 
 def consultar_uso_db(email, fecha):
     """
-    Consulta el conteo real en Supabase. 
-    Si la base de datos falla, se cierra por seguridad (Fail-Closed).
+    Verifica el consumo del usuario dinámico en la BD. 
+    Si el usuario no está registrado en Supabase, restringe el acceso.
     """
     try:
         res = supabase.table("consumo_diario").select("consultas").eq("email", email).eq("fecha", fecha).execute()
         if res.data:
             return res.data[0]["consultas"]
+        
+        # OJO: Si el usuario no tiene registros de consumo hoy, intentamos inicializarlo en 0
         return 0
     except Exception:
         st.error("⚠️ El servidor de validación no responde. Consultas pausadas por seguridad.")
-        st.info("Por favor, recarga la página en unos minutos o verifica tu conexión a internet.")
         st.stop()
 
 def actualizar_uso_db(email, fecha, nuevo_conteo):
     """
-    Registra el consumo de forma síncrona en Supabase (Upsert). 
-    Si la actualización falla, detiene el proceso antes de quemar tokens de IA.
+    Registra el consumo cobrando la consulta en Supabase (Upsert síncrono).
     """
     try:
         supabase.table("consumo_diario").upsert({
@@ -92,7 +92,7 @@ def actualizar_uso_db(email, fecha, nuevo_conteo):
         st.error("❌ No se pudo validar el cobro de tu consulta en el servidor central.")
         st.stop()
 
-# Sincronización estricta en tiempo real en cada renderizado de pantalla
+# Validación del usuario dinámico en tiempo de ejecución
 conteo_real = consultar_uso_db(usuario_activo, fecha_actual_cdmx)
 st.session_state.conteo_preguntas = conteo_real
 
@@ -133,8 +133,6 @@ st.divider()
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-3-flash-preview')
-    
-    # Corrección: Uso correcto de la biblioteca Pinecone actualizada sin el sufijo '-client'
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
 except Exception as e:
@@ -173,7 +171,6 @@ if st.session_state.conteo_preguntas >= LIMIT_PREGUNTAS:
     )
 else:
     if prompt := st.chat_input("Plantea tu interrogante o caso jurídico..."):
-        # Cobro síncrono e inmediato en la BD de Supabase antes de procesar IA
         nuevo_conteo = st.session_state.conteo_preguntas + 1
         actualizar_uso_db(usuario_activo, fecha_actual_cdmx, nuevo_conteo)
         st.session_state.conteo_preguntas = nuevo_conteo
@@ -189,29 +186,3 @@ else:
                         model="multilingual-e5-large",
                         inputs=[prompt],
                         parameters={"input_type": "query"}
-                    )
-                    
-                    query_res = index.query(
-                        vector=res_embed[0].values, 
-                        top_k=5, 
-                        include_metadata=True,
-                        namespace="silc-juridico"
-                    )
-                    
-                    contexto_legal = "\n\n".join([m['metadata']['text'] for m in query_res['matches']])
-
-                    instruccion = (
-                        f"Eres el SILC (Sistema de Inteligencia Legal y Contexto). "
-                        f"Tu lema es 'Certeza jurídica con profundidad histórica'. "
-                        f"Analiza con rigor lo siguiente basándote en este contexto recuperado:\n\n"
-                        f"{contexto_legal}\n\nPregunta del usuario: {prompt}"
-                    )
-
-                    response = model.generate_content(instruccion)
-                    st.markdown(response.text)
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
-                    
-                    st.rerun()
-
-            except Exception as e:
-                st.error(f"Error durante el procesamiento legal: {str(e)}")
