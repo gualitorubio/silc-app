@@ -65,14 +65,12 @@ except Exception as e:
 def consultar_uso_db(email, fecha):
     """
     Verifica el consumo del usuario dinámico en la BD. 
-    Si el usuario no está registrado en Supabase, restringe el acceso.
+    Si el usuario no está registrado en Supabase, restringe el acceso o inicializa en 0.
     """
     try:
         res = supabase.table("consumo_diario").select("consultas").eq("email", email).eq("fecha", fecha).execute()
         if res.data:
             return res.data[0]["consultas"]
-        
-        # OJO: Si el usuario no tiene registros de consumo hoy, intentamos inicializarlo en 0
         return 0
     except Exception:
         st.error("⚠️ El servidor de validación no responde. Consultas pausadas por seguridad.")
@@ -152,37 +150,4 @@ if st.session_state.conteo_preguntas >= LIMIT_PREGUNTAS:
     st.markdown(
         """
         <div class="bloqueo-container">
-            <h3 style="color: #002D52;">⚠️ Has alcanzado tu límite de 5 consultas diarias</h3>
-            <p>Tu acceso se restablecerá automáticamente a la medianoche (Hora CDMX). Si necesitas continuar con tus investigaciones, actualiza al <b>Plan Profesional</b> por $899.99/mes:</p>
-            <div class="beneficio-item">🚀 30 consultas diarias en el motor SILC de Inteligencia Legal.</div>
-            <div class="beneficio-item">📄 10 descargas diarias de escritos en Word (Demandas, Amparos, Contratos).</div>
-            <div class="beneficio-item">🔍 Buscador y Extractor de Clientes Potenciales B2B ilimitado.</div>
-            <div class="beneficio-item">⚡ Servidores dedicados para una respuesta inmediata.</div>
-        </div>
-        """, 
-        unsafe_allow_html=True
-    )
-    
-    st.link_button(
-        "⭐ MEJORAR AL PLAN PROFESIONAL", 
-        url="https://silcmexico.com/sc-bridge/plans/VqyZwvp6Bxc4zAQd", 
-        use_container_width=True,
-        type="primary"
-    )
-else:
-    if prompt := st.chat_input("Plantea tu interrogante o caso jurídico..."):
-        nuevo_conteo = st.session_state.conteo_preguntas + 1
-        actualizar_uso_db(usuario_activo, fecha_actual_cdmx, nuevo_conteo)
-        st.session_state.conteo_preguntas = nuevo_conteo
-        
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        with st.chat_message("assistant"):
-            try:
-                with st.spinner("Buscando fundamentos en la Galaxia de Datos..."):
-                    res_embed = pc.inference.embed(
-                        model="multilingual-e5-large",
-                        inputs=[prompt],
-                        parameters={"input_type": "query"}
+            <h3 style="color: #002D52;">⚠️ Has alcanzado tu límite de
