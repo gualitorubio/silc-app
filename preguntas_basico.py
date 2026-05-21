@@ -38,7 +38,6 @@ st.markdown("""
 # 2. ENLACE DINÁMICO CON BUILDERALL (URL PARAMETERS)
 # ==========================================
 query_params = st.query_params
-# Extrae dinámicamente el correo enviado por la plataforma de Builderall en la variable '?user='
 usuario_activo = query_params.get("user", None)
 
 if not usuario_activo:
@@ -54,7 +53,6 @@ ahora_cdmx = datetime.now(zona_cdmx)
 fecha_actual_cdmx = ahora_cdmx.strftime('%Y-%m-%d')
 
 try:
-    # Conexión automática y segura mediante Secrets de Streamlit
     supabase_url = st.secrets["SUPABASE_URL"]
     supabase_key = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(supabase_url, supabase_key)
@@ -63,10 +61,6 @@ except Exception as e:
     st.stop()
 
 def consultar_uso_db(email, fecha):
-    """
-    Verifica el consumo del usuario dinámico en la BD. 
-    Si el usuario no está registrado en Supabase, restringe el acceso o inicializa en 0.
-    """
     try:
         res = supabase.table("consumo_diario").select("consultas").eq("email", email).eq("fecha", fecha).execute()
         if res.data:
@@ -77,9 +71,6 @@ def consultar_uso_db(email, fecha):
         st.stop()
 
 def actualizar_uso_db(email, fecha, nuevo_conteo):
-    """
-    Registra el consumo cobrando la consulta en Supabase (Upsert síncrono).
-    """
     try:
         supabase.table("consumo_diario").upsert({
             "email": email, 
@@ -90,7 +81,6 @@ def actualizar_uso_db(email, fecha, nuevo_conteo):
         st.error("❌ No se pudo validar el cobro de tu consulta en el servidor central.")
         st.stop()
 
-# Validación del usuario dinámico en tiempo de ejecución
 conteo_real = consultar_uso_db(usuario_activo, fecha_actual_cdmx)
 st.session_state.conteo_preguntas = conteo_real
 
@@ -147,7 +137,47 @@ for message in st.session_state.messages:
 # 6. COMPORTAMIENTO DEL PAYWALL VS INPUT CHAT
 # ==========================================
 if st.session_state.conteo_preguntas >= LIMIT_PREGUNTAS:
-    st.markdown(
-        """
+    st.markdown("""
         <div class="bloqueo-container">
-            <h3 style="color: #002D52;">⚠️ Has alcanzado tu límite de
+            <h3 style="color: #002D52;">⚠️ Has alcanzado tu límite de 5 consultas diarias</h3>
+            <p>Tu acceso se restablecerá automáticamente a la medianoche (Hora CDMX). Si necesitas continuar con tus investigaciones, actualiza al <b>Plan Profesional</b> por $899.99/mes:</p>
+            <div class="beneficio-item">🚀 30 consultas diarias en el motor SILC de Inteligencia Legal.</div>
+            <div class="beneficio-item">📄 10 descargas diarias de escritos en Word (Demandas, Amparos, Contratos).</div>
+            <div class="beneficio-item">🔍 Buscador y Extractor de Clientes Potenciales B2B ilimitado.</div>
+            <div class="beneficio-item">⚡ Servidores dedicados para una respuesta inmediata.</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.link_button(
+        "⭐ MEJORAR AL PLAN PROFESIONAL", 
+        url="https://silcmexico.com/sc-bridge/plans/VqyZwvp6Bxc4zAQd", 
+        use_container_width=True,
+        type="primary"
+    )
+else:
+    if prompt := st.chat_input("Plantea tu interrogante o caso jurídico..."):
+        nuevo_conteo = st.session_state.conteo_preguntas + 1
+        actualizar_uso_db(usuario_activo, fecha_actual_cdmx, nuevo_conteo)
+        st.session_state.conteo_preguntas = nuevo_conteo
+        
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
+
+        with st.chat_message("assistant"):
+            try:
+                with st.spinner("Buscando fundamentos en la Galaxia de Datos..."):
+                    res_embed = pc.inference.embed(
+                        model="multilingual-e5-large",
+                        inputs=[prompt],
+                        parameters={"input_type": "query"}
+                    )
+                    
+                    query_res = index.query(
+                        vector=res_embed[0].values, 
+                        top_k=5, 
+                        include_metadata=True,
+                        namespace="silc-juridico"
+                    )
+                    
+                    contexto_legal = "\n\n".join([m['metadata']
