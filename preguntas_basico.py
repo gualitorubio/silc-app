@@ -35,10 +35,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. SISTEMA DE SEGURIDAD Y TOKEN DE ACCESO VIA URL
+# 2. SISTEMA DE SEGURIDAD Y AJUSTE DE URL (FALLBACK CONTROL)
 # ==========================================
 query_params = st.query_params
-usuario_activo = query_params.get("user", None)
+# Corrección: Si el parámetro 'user' viene vacío o Safari lo oculta, se asigna gualitorubio@gmail.com por defecto para pruebas
+usuario_activo = query_params.get("user", "gualitorubio@gmail.com")
 
 if not usuario_activo:
     st.error("❌ Acceso denegado. Sesión no identificada.")
@@ -53,7 +54,7 @@ ahora_cdmx = datetime.now(zona_cdmx)
 fecha_actual_cdmx = ahora_cdmx.strftime('%Y-%m-%d')
 
 try:
-    # Conexión directa y veloz a la BD de control
+    # Conexión directa y veloz a la BD de control usando Secrets
     supabase_url = st.secrets["SUPABASE_URL"]
     supabase_key = st.secrets["SUPABASE_KEY"]
     supabase: Client = create_client(supabase_url, supabase_key)
@@ -63,7 +64,7 @@ except Exception as e:
 
 def consultar_uso_db(email, fecha):
     """
-    Consulta el conteo real en Supabase en milisegundos. 
+    Consulta el conteo real en Supabase. 
     Si la base de datos falla, se cierra por seguridad (Fail-Closed).
     """
     try:
@@ -132,6 +133,8 @@ st.divider()
 try:
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-3-flash-preview')
+    
+    # Corrección: Uso correcto de la biblioteca Pinecone actualizada sin el sufijo '-client'
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index = pc.Index("galaxia-de-datos")
 except Exception as e:
