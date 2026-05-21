@@ -1,3 +1,5 @@
-pinecone
-google-generativeai
 streamlit
+google-generativeai
+pinecone-client
+pytz
+supabase
