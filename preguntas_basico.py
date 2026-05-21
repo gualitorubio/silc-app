@@ -180,4 +180,19 @@ else:
                         namespace="silc-juridico"
                     )
                     
-                    contexto_legal = "\n\n".join([m['metadata']
+                    contexto_legal = "\n\n".join([m['metadata']['text'] for m in query_res['matches']])
+
+                    instruccion = (
+                        f"Eres el SILC (Sistema de Inteligencia Legal y Contexto). "
+                        f"Tu lema es 'Certeza jurídica con profundidad histórica'. "
+                        f"Analiza con rigor lo siguiente basándote en este contexto recuperado:\n\n"
+                        f"{contexto_legal}\n\nPregunta del usuario: {prompt}"
+                    )
+
+                    response = model.generate_content(instruccion)
+                    st.markdown(response.text)
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    st.rerun()
+
+            except Exception as e:
+                st.error(f"Error durante el procesamiento legal: {str(e)}")
